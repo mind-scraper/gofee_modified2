@@ -1,6 +1,5 @@
 """ Definition of GOFEE class.
 """
-from scipy.special import erf
 import os
 import random
 

@@ -8,7 +8,7 @@ from ase.constraints import FixAtoms
 from gofee.surrogate.kernel import GaussKernel, DoubleGaussKernel
 from gofee.surrogate.descriptor.fingerprint import Fingerprint
 from gofee.surrogate.prior.prior import RepulsivePrior
-from gofee.surrogate.gpr_calculator_new_idea import gpr_calculator
+from gofee.surrogate.gpr_calculator import gpr_calculator ###The file have been modified
 from gofee.utils import get_force_points_by_energy_decent
 
 from time import time

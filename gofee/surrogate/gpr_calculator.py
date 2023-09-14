@@ -23,7 +23,8 @@ class gpr_calculator(Calculator):
                 E, Estd = self.gpr.predict_energy(atoms, eval_std=True)
                 atoms.info['key_value_pairs']['Epred'] = E
                 atoms.info['key_value_pairs']['Epred_std'] = Estd
-                E = E - self.kappa*Estd
+                #E = E - self.kappa*Estd
+                #E = E - Estd
             self.results['energy'] = E
 
         if 'forces' in properties:
@@ -31,5 +32,5 @@ class gpr_calculator(Calculator):
                 F = self.gpr.predict_forces(atoms)
             else:
                 F, Fstd = self.gpr.predict_forces(atoms, eval_with_energy_std=True)
-                F = F - self.kappa*Fstd
+                F = 0.5*F - 0.5*Fstd
             self.results['forces'] = F
