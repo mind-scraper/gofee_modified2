@@ -1,6 +1,7 @@
 # GOFEE modified 2
 
 Tested with
+0. Python 3.8
 1. ASE 3.22.1
 2. cymem 2.0.8
 3. Cython 0.29.21
