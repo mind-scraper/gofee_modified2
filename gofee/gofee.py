@@ -538,7 +538,7 @@ class GOFEE():
         Njobs = self.Ncandidates
         task_split = split(Njobs, self.comm.size)
         def func2():
-            return [self.surrogate_relaxation(candidates[i], Fmax=0.1, steps=200, kappa=0)
+            return [self.surrogate_relaxation(candidates[i], Fmax=0.1, steps=150, kappa=0)
                     for i in task_split[self.comm.rank]]
         relaxed_candidates = parallel_function_eval(self.comm, func2)
         #relaxed_candidates = self.certainty_filter(relaxed_candidates)
