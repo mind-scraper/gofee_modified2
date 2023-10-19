@@ -538,14 +538,14 @@ class GOFEE():
         Njobs = self.Ncandidates
         task_split = split(Njobs, self.comm.size)
         def func2():
-            return [self.surrogate_relaxation(candidates[i], Fmax=0.1, steps=400, kappa=0)
+            return [self.surrogate_relaxation(candidates[i], Fmax=0.1, steps=200, kappa=0)
                     for i in task_split[self.comm.rank]]
         relaxed_candidates = parallel_function_eval(self.comm, func2)
-        relaxed_candidates = self.certainty_filter(relaxed_candidates)
-        if self.add_population_to_candidates():
-            relaxed_candidates = self.population.get_refined_pop() + relaxed_candidates
-        if self.filter_optimized_structures:
-            relaxed_candidates = self.sufficiently_optimized_filter(relaxed_candidates)
+        #relaxed_candidates = self.certainty_filter(relaxed_candidates)
+        #if self.add_population_to_candidates():
+        #    relaxed_candidates = self.population.get_refined_pop() + relaxed_candidates
+        #if self.filter_optimized_structures:
+        #    relaxed_candidates = self.sufficiently_optimized_filter(relaxed_candidates)
         
         return relaxed_candidates
     
@@ -554,7 +554,7 @@ class GOFEE():
         sLCB.
         The tasks are parrlelized over all avaliable cores.
         """
-        Njobs = len(candidates)
+        Njobs = self.Ncandidates
         task_split = split(Njobs, self.comm.size)
 
         Epred = np.array([a.info['key_value_pairs']['Epred']
@@ -566,10 +566,16 @@ class GOFEE():
         self.kappa = eff_kappa
 
         def func4():
-            return [self.surrogate_relaxation(candidates[i], Fmax=0.1, steps=400, kappa=eff_kappa)
+            return [self.surrogate_relaxation(candidates[i], Fmax=0.1, steps=50, kappa=eff_kappa)
                     for i in task_split[self.comm.rank]]
 
         relaxed_candidates = parallel_function_eval(self.comm, func4)
+
+        relaxed_candidates = self.certainty_filter(relaxed_candidates)
+        if self.add_population_to_candidates():
+            relaxed_candidates = self.population.get_refined_pop() + relaxed_candidates
+        if self.filter_optimized_structures:
+            relaxed_candidates = self.sufficiently_optimized_filter(relaxed_candidates)
 
         return relaxed_candidates
 
@@ -581,7 +587,7 @@ class GOFEE():
         a_mutated = self.candidate_generator.get_new_candidate(parents)
         return a_mutated
 
-    def surrogate_relaxation(self, a, Fmax=0.1, steps=400, kappa=None):
+    def surrogate_relaxation(self, a, Fmax=0.1, steps=200, kappa=None):
         """ Method to carry out relaxations of new candidates in the
         surrogate potential.
         """
@@ -724,9 +730,9 @@ class GOFEE():
                                self.gpr.memory.features)
 
         if self.population_method == 'clustering':
-            Fmax, steps = 0.05, 200
+            Fmax, steps = 0.05, 50
         else:
-            Fmax, steps = 0.01, 400
+            Fmax, steps = 0.01, 200
 
         cond_relax_pop = self.population_method != 'clustering' or self.add_population_to_candidates()
 
