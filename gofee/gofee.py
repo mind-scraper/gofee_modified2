@@ -396,16 +396,17 @@ class GOFEE():
             #self.log()
             t3 = time()
             relaxed_candidates = self.relax_candidates_with_surrogate(self.unrelaxed_candidates)
+            relaxed_candidates = self.relax_candidates_with_slcb(relaxed_candidates)
             t4 = time()
             #self.log_msg += ('Relax candidates passed')
             #self.log()
-            #kappa = self.kappa
-            #self.log_msg += (f"kappa = {kappa} \n")
+            kappa = self.kappa
+            self.log_msg += (f"Effective kappa = {kappa} \n")
             a_add = []
                 
             for _ in range(self.Ncandidates):
                 try:
-                    anew0 = self.select_with_acquisition(relaxed_candidates) #, kappa)
+                    anew0 = self.select_with_acquisition(relaxed_candidates, kappa)
  
                     idx_relax = anew0.info['key_value_pairs'].get('index_closest_min')
 
@@ -537,7 +538,7 @@ class GOFEE():
         Njobs = self.Ncandidates
         task_split = split(Njobs, self.comm.size)
         def func2():
-            return [self.surrogate_relaxation(candidates[i], Fmax=0.1, steps=400, kappa=1)
+            return [self.surrogate_relaxation(candidates[i], Fmax=0.1, steps=400, kappa=0)
                     for i in task_split[self.comm.rank]]
         relaxed_candidates = parallel_function_eval(self.comm, func2)
         relaxed_candidates = self.certainty_filter(relaxed_candidates)
@@ -547,6 +548,31 @@ class GOFEE():
             relaxed_candidates = self.sufficiently_optimized_filter(relaxed_candidates)
         
         return relaxed_candidates
+    
+    def relax_candidates_with_slcb(self, candidates):
+        """ Method to relax candidates again using the
+        sLCB.
+        The tasks are parrlelized over all avaliable cores.
+        """
+        Njobs = len(candidates)
+        task_split = split(Njobs, self.comm.size)
+
+        Epred = np.array([a.info['key_value_pairs']['Epred']
+                          for a in candidates])
+        Epred_std = np.array([a.info['key_value_pairs']['Epred_std']
+                              for a in candidates])
+        
+        eff_kappa = (np.max(Epred) - np.min(Epred)) / (np.max(Epred_std) - np.min(Epred_std))
+        self.kappa = eff_kappa
+
+        def func4():
+            return [self.surrogate_relaxation(candidates[i], Fmax=0.1, steps=400, kappa=eff_kappa)
+                    for i in task_split[self.comm.rank]]
+
+        relaxed_candidates = parallel_function_eval(self.comm, func4)
+
+        return relaxed_candidates
+
 
     def generate_candidate(self):
         """ Method to generate new candidate.
@@ -737,27 +763,18 @@ class GOFEE():
             self.gpr.train()
             self.log_msg += (f"kernel fixed:\nTheta = {[f'{x:.2e}' for x in np.exp(self.gpr.kernel.theta)]}\n\n")
 
-    def select_with_acquisition(self, structures):
+    def select_with_acquisition(self, structures, kappa):
         """ Method to select single most "promizing" candidate 
         for first-principles evaluation according to the acquisition
         function min(E-kappa*std(E)).
         """
         Epred = np.array([a.info['key_value_pairs']['Epred']
                           for a in structures])
-        Epred = self.rescale(Epred)
-
         Epred_std = np.array([a.info['key_value_pairs']['Epred_std']
                               for a in structures])
-        Epred_std = self.rescale(Epred_std)
-
-        acquisition = Epred - Epred_std
+        acquisition = Epred - kappa*Epred_std
         index_select = np.argmin(acquisition)
         return structures[index_select]
-    
-    def rescale(self, a):
-        interval = np.max(a) - np.min(a)
-        a = (a - np.min(a)) / interval * 100
-        return a
 
     def status_sufficiently_optimized_structures(self, a_add):
         if self.filter_optimized_structures:
