@@ -579,17 +579,13 @@ class GOFEE():
                               for a in structures])        
         envelope = EllipticEnvelope(contamination=0.1)  # Adjust the contamination parameter as needed
         is_inlier = envelope.fit_predict(Epred_std.reshape(-1, 1))
-        for i in range(len(is_inlier)):
-            if is_inlier[i] == -1:
-                del structures[i]
+        structures = [structures[i] for i in range(len(is_inlier)) if is_inlier[i] == 1]
 
         Epred = np.array([a.info['key_value_pairs']['Epred']
                               for a in structures])     
         envelope = EllipticEnvelope(contamination=0.1)  # Adjust the contamination parameter as needed
         is_inlier = envelope.fit_predict(Epred.reshape(-1, 1))
-        for i in range(len(is_inlier)):
-            if is_inlier[i] == -1:
-                del structures[i]        
+        structures = [structures[i] for i in range(len(is_inlier)) if is_inlier[i] == 1]
 
         return structures
 
