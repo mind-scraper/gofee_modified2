@@ -5,6 +5,7 @@ import random
 
 import numpy as np
 from scipy.spatial.distance import cdist, euclidean
+from sklearn.covariance import EllipticEnvelope
 import pickle
 from os.path import isfile
 
@@ -133,7 +134,8 @@ class GOFEE():
                  gpr=None,
                  startgenerator=None,
                  candidate_generator=None,
-                 kappa=1, ###SAM, This input is deprecated. It has no effect for current implementation. 
+                 kappa=1, ###SAM, This input is deprecated. It has no effect for current implementation.
+                 kappa_relax=1, 
                  max_steps=500,
                  Ninit=10,
                  max_relax_dist=4,
@@ -222,6 +224,7 @@ class GOFEE():
             self.candidate_generator = CandidateGenerator([1.0],[rattle])
 
         self.kappa = kappa
+        self.kappa_relax = kappa_relax
         self.max_steps = max_steps
         self.Ninit = Ninit
         self.max_relax_dist = max_relax_dist
@@ -382,26 +385,18 @@ class GOFEE():
             self.log_msg += (f"Runtime: {timedelta(seconds=time()-self.t_start)}\n\n")            
             t0 = time()            
             self.train_surrogate()
-            #self.log_msg += ('Train passed')
-            #self.log()
             t1 = time()
             self.update_population()
-            #self.log_msg += ('Update population passed')
-            #self.log()
             t2 = time()
             self.unrelaxed_candidates = []
             self.generate_new_candidates()
             #unrelaxed_candidates = self.generate_new_candidates()
-            #self.log_msg += ('Generate new candidates passed')
-            #self.log()
             t3 = time()
             relaxed_candidates = self.relax_candidates_with_surrogate(self.unrelaxed_candidates)
-            relaxed_candidates = self.relax_candidates_with_slcb(relaxed_candidates)
             t4 = time()
-            #self.log_msg += ('Relax candidates passed')
-            #self.log()
-            kappa = self.kappa
-            self.log_msg += (f"Effective kappa = {kappa} \n")
+            kappa = self.eff_kappa
+            self.log_msg += (f"Kappa relax = {self.kappa_relax} \n")
+            self.log_msg += (f"Kappa select = {kappa} \n")
             a_add = []
                 
             for _ in range(self.Ncandidates):
@@ -535,49 +530,72 @@ class GOFEE():
         surrogate-model.
         The tasks are parrlelized over all avaliable cores.
         """
-        Njobs = self.Ncandidates
+
+        #SAM, 2023/10/15: Print energy and uncertainty of candidates
+        E_list = []
+        Estd_list = []
+        for a in candidates:
+            E, Estd = self.gpr.predict_energy(a, eval_std=True)
+            E_list.append(E)
+            Estd_list.append(Estd)
+        self.log_msg += "\nBefore relaxation\n"
+        self.log_msg += "Candidate | Energy (eV)    | Uncertainty (eV)\n"
+        for i in range(len(E_list)):
+            self.log_msg += f"{i}   | {E_list[i]}    | {Estd_list[i]}\n"
+        #############################################################
+
+        Njobs = len(candidates)
         task_split = split(Njobs, self.comm.size)
         def func2():
-            return [self.surrogate_relaxation(candidates[i], Fmax=0.1, steps=150, kappa=0)
+            return [self.surrogate_relaxation(candidates[i], Fmax=0.1, steps=400, kappa=self.kappa_relax)
                     for i in task_split[self.comm.rank]]
         relaxed_candidates = parallel_function_eval(self.comm, func2)
-        #relaxed_candidates = self.certainty_filter(relaxed_candidates)
-        #if self.add_population_to_candidates():
-        #    relaxed_candidates = self.population.get_refined_pop() + relaxed_candidates
-        #if self.filter_optimized_structures:
-        #    relaxed_candidates = self.sufficiently_optimized_filter(relaxed_candidates)
-        
-        return relaxed_candidates
-    
-    def relax_candidates_with_slcb(self, candidates):
-        """ Method to relax candidates again using the
-        sLCB.
-        The tasks are parrlelized over all avaliable cores.
-        """
-        Njobs = self.Ncandidates
-        task_split = split(Njobs, self.comm.size)
+        relaxed_candidates = self.elliptic_envelope_filter(relaxed_candidates)
+        relaxed_candidates = self.certainty_filter(relaxed_candidates)        
 
-        Epred = np.array([a.info['key_value_pairs']['Epred']
-                          for a in candidates])
-        Epred_std = np.array([a.info['key_value_pairs']['Epred_std']
-                              for a in candidates])
-        
-        eff_kappa = (np.max(Epred) - np.min(Epred)) / (np.max(Epred_std) - np.min(Epred_std))
-        self.kappa = eff_kappa
-
-        def func4():
-            return [self.surrogate_relaxation(candidates[i], Fmax=0.1, steps=50, kappa=eff_kappa)
-                    for i in task_split[self.comm.rank]]
-
-        relaxed_candidates = parallel_function_eval(self.comm, func4)
-
-        relaxed_candidates = self.certainty_filter(relaxed_candidates)
         if self.add_population_to_candidates():
-            relaxed_candidates = self.population.get_refined_pop() + relaxed_candidates
+            relaxed_candidates = self.population.get_refined_pop() + relaxed_candidates        
         if self.filter_optimized_structures:
             relaxed_candidates = self.sufficiently_optimized_filter(relaxed_candidates)
+        
+        #SAM, 2023/10/15: Print energy and uncertainty of candidates
+        Epred = np.array([a.info['key_value_pairs']['Epred']
+                          for a in relaxed_candidates])
+        Epred_std = np.array([a.info['key_value_pairs']['Epred_std']
+                              for a in relaxed_candidates])
+        self.log_msg += "\nAfter relaxation\n"
+        self.log_msg += "Candidate | Energy (eV)    | Uncertainty (eV)\n"
+        for i in range(len(Epred)):
+            self.log_msg += f"{i}   | {Epred[i]}    | {Epred_std[i]}\n"
+        #############################################################
+
+        eff_kappa = (np.max(Epred) - np.min(Epred)) / (np.max(Epred_std) - np.min(Epred_std))
+        self.eff_kappa = eff_kappa
 
         return relaxed_candidates
+    
+    def elliptic_envelope_filter(self, structures):
+        Epred_std = np.array([a.info['key_value_pairs']['Epred_std']
+                              for a in structures])
+        data = np.array(Epred_std)        
+        envelope = EllipticEnvelope(contamination=0.1)  # Adjust the contamination parameter as needed
+        is_inlier = envelope.fit_predict(data.reshape(-1, 1))
+        
+        for i in range(len(is_inlier)):
+            if is_inlier[i] == -1:
+                del structures[i]
+
+        Epred = np.array([a.info['key_value_pairs']['Epred']
+                              for a in structures])
+        data = np.array(Epred)        
+        envelope = EllipticEnvelope(contamination=0.1)  # Adjust the contamination parameter as needed
+        is_inlier = envelope.fit_predict(data.reshape(-1, 1))
+        
+        for i in range(len(data)):
+            if is_inlier[i] == -1:
+                del structures[i]        
+
+        return structures
 
 
     def generate_candidate(self):
@@ -679,7 +697,7 @@ class GOFEE():
         # Save prediction in info-dict
         a_relaxed.info['key_value_pairs']['Epred'] = E
         a_relaxed.info['key_value_pairs']['Epred_std'] = Estd
-        a_relaxed.info['key_value_pairs']['kappa'] = self.kappa
+        a_relaxed.info['key_value_pairs']['kappa'] = self.kappa_relax
 
         return a_relaxed
         
