@@ -5,7 +5,6 @@ import random
 
 import numpy as np
 from scipy.spatial.distance import cdist, euclidean
-from sklearn.covariance import EllipticEnvelope
 import pickle
 from os.path import isfile
 
@@ -550,7 +549,6 @@ class GOFEE():
             return [self.surrogate_relaxation(candidates[i], Fmax=0.1, steps=400, kappa=self.kappa_relax)
                     for i in task_split[self.comm.rank]]
         relaxed_candidates = parallel_function_eval(self.comm, func2)
-        relaxed_candidates = self.elliptic_envelope_filter(relaxed_candidates)
         relaxed_candidates = self.certainty_filter(relaxed_candidates)        
 
         if self.add_population_to_candidates():
@@ -573,22 +571,6 @@ class GOFEE():
         self.eff_kappa = eff_kappa
 
         return relaxed_candidates
-    
-    def elliptic_envelope_filter(self, structures):
-        Epred_std = np.array([a.info['key_value_pairs']['Epred_std']
-                              for a in structures])        
-        envelope = EllipticEnvelope(contamination=0.1)  # Adjust the contamination parameter as needed
-        is_inlier = envelope.fit_predict(Epred_std.reshape(-1, 1))
-        structures = [structures[i] for i in range(len(is_inlier)) if is_inlier[i] == 1]
-
-        Epred = np.array([a.info['key_value_pairs']['Epred']
-                              for a in structures])     
-        envelope = EllipticEnvelope(contamination=0.1)  # Adjust the contamination parameter as needed
-        is_inlier = envelope.fit_predict(Epred.reshape(-1, 1))
-        structures = [structures[i] for i in range(len(is_inlier)) if is_inlier[i] == 1]
-
-        return structures
-
 
     def generate_candidate(self):
         """ Method to generate new candidate.
