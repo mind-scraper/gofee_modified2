@@ -7,6 +7,7 @@ from ase.constraints import FixAtoms
 
 from gofee.surrogate.kernel import GaussKernel, DoubleGaussKernel
 from gofee.surrogate.descriptor.fingerprint import Fingerprint
+from gofee.surrogate.descriptor.soap import soap
 from gofee.surrogate.prior.prior import RepulsivePrior
 from gofee.surrogate.gpr_calculator import gpr_calculator ###The file have been modified
 from gofee.utils import get_force_points_by_energy_decent
@@ -309,6 +310,8 @@ class GPR():
     def __init__(self, descriptor=None, kernel='double', prior=None, n_restarts_optimizer=1, template_structure=None, scale_reg=False, **kwargs):
         if descriptor is None:
             self.descriptor = Fingerprint()
+        elif descriptor is 'soap':
+            self.descriptor = soap(template_structure)
         else:
             self.descriptor = descriptor
         Nsplit_eta = None
