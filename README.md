@@ -8,4 +8,5 @@ Tested with
 4. GPAW 22.8.0
 5. mpi4py 3.1.5
 6. numpy 1.22.3
+7. dscripbe 2.1.0
 
