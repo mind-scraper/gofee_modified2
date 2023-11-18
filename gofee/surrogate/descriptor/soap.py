@@ -11,10 +11,10 @@ class soap():
 
     def get_feature(self, a):
         feature = self.descriptor.create(a)
-        feature = feature.flatten()
+        feature = feature.reshape(1, -1)
         return feature
     
     def get_featureGradient(self, a):
         derivatives, descriptors = self.descriptor.derivatives(a)
-        derivatives = derivatives.flatten()
+        derivatives = derivatives.reshape(1, len(a), 3, -1)
         return derivatives
